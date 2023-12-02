@@ -75,7 +75,7 @@ func (w *Watcher) watchDir(dirPath string, logFile *os.File) error {
 				{
 					if event.Has(fsnotify.Create) {
 						log.Println("创建文件（夹）: ", event.Name)
-						logJSON(logFile, "创建文件（夹）", event.Name)
+						logJSON(logFile, "创建文件（夹）", event.Name, LogLevelINFO)
 						//这里获取新创建文件的信息，如果是目录，则加入监控中
 						fi, err := os.Stat(event.Name)
 						if err == nil && fi.IsDir() {
@@ -85,7 +85,7 @@ func (w *Watcher) watchDir(dirPath string, logFile *os.File) error {
 					}
 					if event.Has(fsnotify.Write) {
 						log.Println("修改文件（夹）内容: ", event.Name)
-						logJSON(logFile, "修改文件（夹）内容", event.Name)
+						logJSON(logFile, "修改文件（夹）内容", event.Name, LogLevelINFO)
 					}
 					if event.Has(fsnotify.Remove) {
 						//当删除的是文件时，上层文件夹会发出remove事件，这里会收到1条remove事件，os.Stat会返回err；
@@ -99,13 +99,13 @@ func (w *Watcher) watchDir(dirPath string, logFile *os.File) error {
 						//	logJSON(logFile, "删除文件（夹）", event.Name)
 						//}
 						log.Println("删除文件（夹）: ", event.Name)
-						logJSON(logFile, "删除文件（夹）", event.Name)
+						logJSON(logFile, "删除文件（夹）", event.Name, LogLevelINFO)
 						w.watcher.Remove(event.Name)
 					}
 					if event.Has(fsnotify.Rename) {
 						//与删除的情况不同，重命名文件夹时，只有上层文件夹会发送rename事件，所以只收到1条rename事件
 						log.Println("重命名文件（夹）: ", event.Name)
-						logJSON(logFile, "重命名文件（夹）", event.Name)
+						logJSON(logFile, "重命名文件（夹）", event.Name, LogLevelINFO)
 						//如果是目录，则移除监控
 						//但这里无法使用os.Stat来判断是否是目录，重命名后，已经无法找到原文件来获取信息了
 						//所以这里就简单粗爆的直接remove好了
@@ -113,7 +113,7 @@ func (w *Watcher) watchDir(dirPath string, logFile *os.File) error {
 					}
 					if event.Has(fsnotify.Chmod) {
 						log.Println("修改文件（夹）权限: ", event.Name)
-						logJSON(logFile, "修改文件（夹）权限", event.Name)
+						logJSON(logFile, "修改文件（夹）权限", event.Name, LogLevelINFO)
 					}
 				}
 			case err := <-w.watcher.Errors:
@@ -174,23 +174,23 @@ func (w *Watcher) watchFile(filePath string, logFile *os.File) error {
 					// Chmod 修改权限
 					if event.Has(fsnotify.Create) {
 						log.Println("创建文件（夹）: ", event.Name)
-						logJSON(logFile, "创建文件（夹）", event.Name)
+						logJSON(logFile, "创建文件（夹）", event.Name, LogLevelINFO)
 					}
 					if event.Has(fsnotify.Write) {
 						log.Println("修改文件（夹）内容: ", event.Name)
-						logJSON(logFile, "修改文件（夹）内容", event.Name)
+						logJSON(logFile, "修改文件（夹）内容", event.Name, LogLevelINFO)
 					}
 					if event.Has(fsnotify.Remove) {
 						log.Println("删除文件（夹）: ", event.Name)
-						logJSON(logFile, "删除文件（夹）", event.Name)
+						logJSON(logFile, "删除文件（夹）", event.Name, LogLevelINFO)
 					}
 					if event.Has(fsnotify.Rename) {
 						log.Println("重命名文件（夹）: ", event.Name)
-						logJSON(logFile, "重命名文件（夹）", event.Name)
+						logJSON(logFile, "重命名文件（夹）", event.Name, LogLevelINFO)
 					}
 					if event.Has(fsnotify.Chmod) {
 						log.Println("修改文件（夹）权限: ", event.Name)
-						logJSON(logFile, "修改文件（夹）权限", event.Name)
+						logJSON(logFile, "修改文件（夹）权限", event.Name, LogLevelINFO)
 					}
 				}
 			case err := <-w.watcher.Errors:
