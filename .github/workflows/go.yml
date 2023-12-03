@@ -236,4 +236,4 @@ jobs:
 
       # 将更新后的 versions.json 文件上传回 OSS
       - name: Copy updated versions.json file to OSS
-        run: /usr/local/bin/ossutil64 cp ./versions.json oss://hole-plugin/fileMonitor -f
+        run: /usr/local/bin/ossutil64 cp ./versions.json oss://hole-plugin/fileMonitor/versions.json -f
