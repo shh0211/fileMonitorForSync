@@ -1,0 +1,239 @@
+name: Build fileMonitor Plugin
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  prepare:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '^1.13.1' # The Go version to download (if necessary) and use.
+      - name: Configure git for private modules
+        env:
+          TOKEN: ${{ secrets.CR_PAT }}
+        run: git config --global url."https://senghoo:${TOKEN}@github.com".insteadOf "https://github.com"
+      - name: Cache go path
+        uses: actions/cache@v2
+        env:
+          cache-name: cache-go-hole-path
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+      - run: go mod download
+      - name: Conventional Changelog Action
+        if: ${{ !startsWith(github.event.commits[0].message, 'chore(release)') }}
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v3
+        with:
+          github-token: ${{ secrets.CR_PAT }}
+          tag-prefix: 'v'
+          release-count: '10'
+          version-file: 'version.json'
+          version-path: 'version'
+          output-file: 'CHANGELOG.md'
+          git-push: false
+      - uses: actions/upload-artifact@v2
+        with:
+          name: changelog
+          path: |
+            CHANGELOG.md
+            version.json
+      - name: Update version
+        if: ${{ !startsWith(github.event.commits[0].message, 'chore(release)') }}
+        uses: ./.github/actions/write-version
+
+      - uses: actions/upload-artifact@v2
+        if: ${{ !startsWith(github.event.commits[0].message, 'chore(release)') }}
+        with:
+          name: go-version
+          path: version/version.go
+
+      - uses: DamianReeves/write-file-action@master
+        if: ${{ !startsWith(github.event.commits[0].message, 'chore(release)') &&  steps.changelog.outputs.clean_changelog}}
+        with:
+          path: ./PR.txt
+          contents: ${{steps.changelog.outputs.clean_changelog}}
+          write-mode: overwrite
+
+      - uses: actions/upload-artifact@v2
+        if: ${{ !startsWith(github.event.commits[0].message, 'chore(release)') }}
+        with:
+          name: pr-content
+          path: PR.txt
+
+      - uses: actions/upload-artifact@v2
+        with:
+          name: github
+          path: .github
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+
+    steps:
+      - name: Checkout fileMonitor repository
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '^1.13.1'
+
+      - name: Configure git for private modules
+        env:
+          TOKEN: ${{ secrets.CR_PAT }}
+        run: git config --global url."https://senghoo:${TOKEN}@github.com".insteadOf "https://github.com"
+
+      - name: Cache go path
+        uses: actions/cache@v2
+        env:
+          cache-name: cache-go-path
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+
+      - run: go mod download
+
+      - name: Build fileMonitor
+        run: go build -o fileMonitor-linux-${{ matrix.goarch }} -ldflags="-s -w" -trimpath ./main.go
+        env:
+          GOARCH: ${{ matrix.goarch }}
+
+      - name: Upload fileMonitor Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: fileMonitor-linux-${{ matrix.goarch }}
+          path: fileMonitor-linux-${{ matrix.goarch }}
+
+
+  prepare-release:
+    runs-on: ubuntu-20.04
+    needs: build
+    if: ${{ !startsWith(github.event.commits[0].message, 'chore(release)') }}
+    steps:
+      - uses: actions/checkout@v2
+
+      # 读取版本信息
+      - name: Read Version Information
+        uses: ./.github/actions/read-version
+        id: version
+
+      # 配置 git
+      - name: Configure git for private modules
+        env:
+          TOKEN: ${{ secrets.CR_PAT }}
+        run: git config --global url."https://senghoo:${TOKEN}@github.com".insteadOf "https://github.com"
+
+      # 创建 Pull Request
+      - name: Create Release Pull Request
+        uses: peter-evans/create-pull-request@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }} # 使用 GITHUB_TOKEN 而不是 CR_PAT，除非你需要 CR_PAT 提供额外的权限
+          commit-message: >-
+            ${{ format('chore(release): {0}', steps.version.outputs.version) }}
+          title: ${{ format('Prepare Release {0}', steps.version.outputs.version) }}
+          body: |
+            ## New Release
+            - Version: ${{ steps.version.outputs.version }}
+            - Changelog: ${{ steps.version.outputs.changelog }}
+          branch: prepare-release
+  tagging:
+    needs: build
+    runs-on: ubuntu-20.04
+    if: startsWith(github.event.commits[0].message, 'chore(release)')
+    steps:
+      - uses: actions/checkout@v2
+
+      # 读取版本信息
+      - name: Read Version Information
+        uses: ./.github/actions/read-version
+        id: version
+
+      # 创建新的 Git 标签
+      - name: Create Git Tag
+        uses: actions/github-script@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }} # 推荐使用 GITHUB_TOKEN
+          script: |
+            github.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/v${{ steps.version.outputs.version }}`,
+              sha: context.sha
+            })
+  release:
+    needs: build
+    runs-on: ubuntu-20.04
+    if: startsWith(github.event.commits[0].message, 'chore(release)')
+    steps:
+      - name: Download obsutil
+        run: wget -P /usr/local/bin https://gosspublic.alicdn.com/ossutil/1.7.10/ossutil64
+
+      - name: Configure obsutil
+        env:
+          ALIYUN_OSS_ENDPOINT: oss-cn-beijing.aliyuncs.com
+        run: |
+          chmod 755 /usr/local/bin/ossutil64
+          /usr/local/bin/ossutil64 config -e $ALIYUN_OSS_ENDPOINT -i ${{ secrets.ALIYUN_OBS_AK }} -k ${{ secrets.ALIYUN_OBS_SK }}
+      - name: Download fileMonitor artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: fileMonitor-linux-amd64
+
+      - name: Download fileMonitor artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: fileMonitor-linux-arm64
+
+      - name: Download changelog
+        uses: actions/download-artifact@v2
+        with:
+          name: changelog
+      - uses: actions/download-artifact@v2
+        with:
+          name: github
+          path: .github
+      - name: Display directory structure
+        run: tree
+
+      - name: Read plugins version information
+        uses: ./.github/actions/read-version
+        id: version
+
+      # 尝试从 OSS 下载 versions.json，如果不存在则创建一个新的
+      - name: Check versions.json existence
+        id: check_versions
+        run: |
+          if /usr/local/bin/ossutil64 ls oss://hole-plugin/fileMonitor/versions.json 2>&1 | grep -q "Object Number is: 0"; then
+            echo "versions.json does not exist, creating a new one."
+            echo '[]' > versions.json
+            /usr/local/bin/ossutil64 cp versions.json oss://hole-plugin/fileMonitor/versions.json -f
+            echo "Created and uploaded new versions.json with initial version 0.0.0"
+          else
+          echo "versions.json exists in OSS, downloading it."
+          /usr/local/bin/ossutil64 cp oss://hole-plugin/fileMonitor/versions.json ./
+          echo "Downloaded versions.json from OSS."
+          fi
+
+      - run: mv fileMonitor-linux-amd64 fileMonitor-linux-amd64-${{steps.version.outputs.version}}
+      - run: mv fileMonitor-linux-arm64 fileMonitor-linux-arm64-${{steps.version.outputs.version}}
+      - run: /usr/local/bin/ossutil64 cp fileMonitor-linux-amd64-${{steps.version.outputs.version}} oss://hole-plugin/fileMonitor/release/${{ steps.version.outputs.version }}/fileMonitor-linux-amd64-${{steps.version.outputs.version}} -u -f
+      - run: /usr/local/bin/ossutil64 cp fileMonitor-linux-arm64-${{steps.version.outputs.version}} oss://hole-plugin/fileMonitor/release/${{ steps.version.outputs.version }}/fileMonitor-linux-arm64-${{steps.version.outputs.version}} -u -f
+      - run: /usr/local/bin/ossutil64 cp fileMonitor-linux-amd64-${{steps.version.outputs.version}} oss://hole-plugin/fileMonitor/release/latest/fileMonitor-linux-amd64-latest -u -f
+      - run: /usr/local/bin/ossutil64 cp fileMonitor-linux-arm64-${{steps.version.outputs.version}} oss://hole-plugin/fileMonitor/release/latest/fileMonitor-linux-arm64-latest -u -f
+
+      # 使用自定义动作更新 versions.json 文件
+      - uses: ./.github/actions/update-versions
+        with:
+          version: ${{steps.version.outputs.version}}
+
+      # 将更新后的 versions.json 文件上传回 OSS
+      - name: Copy updated versions.json file to OSS
+        run: /usr/local/bin/ossutil64 cp ./versions.json oss://hole-plugin/fileMonitor -f

@@ -1,0 +1,6 @@
+name: Update Version and Write Changelog
+description: Update the version and write changelog
+runs:
+  using: 'node12'
+  main: index.js
+  
