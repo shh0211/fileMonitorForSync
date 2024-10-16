@@ -95,9 +95,7 @@ func (w *Watcher) resetTimer() {
 		w.timer.Stop() // 停止当前定时器
 	}
 
-	// 设置一个新的10分钟计时器
 	w.timer = time.AfterFunc(w.interval, func() {
-		// 当计时器超时（即10分钟内无变化）时，触发上传
 		w.mu.Lock()
 		w.isIdle = true
 		w.mu.Unlock()
@@ -105,11 +103,8 @@ func (w *Watcher) resetTimer() {
 		w.triggerUpload()
 	})
 
-	// 文件夹发生变化后，标记为非空闲状态
 	w.isIdle = false
 }
-
-// 上传本次变动的文件
 func (w *Watcher) triggerUpload() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -119,56 +114,59 @@ func (w *Watcher) triggerUpload() {
 		return
 	}
 
-	// 执行上传操作，只上传本次发生变化的文件
 	log.Println("10分钟内无变化，开始上传本次变化的文件...")
 	for file := range w.changedFiles {
-		// 在这里上传每个文件
 		log.Printf("上传文件: %s\n", file)
 		uploadFileToLinux(file)
 	}
 
-	// 清空记录的文件变化列表
 	w.changedFiles = make(map[string]struct{})
 }
 
 func uploadFileToLinux(filepath string) {
-	// 在这里实现文件上传逻辑
-	// 远程服务器信息
-	remoteHost := "your.server.com"    // 服务器地址
-	remoteUser := "username"           // 服务器用户名
-	remoteDir := "/path/to/remote/dir" // 服务器目标目录
-
-	// 生成 SCP 命令
 	cmd := exec.Command("scp", filepath, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remoteDir))
-
-	// 执行 SCP 命令
+	// 执行命令
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		println("failed to upload file: %v, output: %s", err, string(output))
 	}
 
-	println("File %s uploaded to %s@%s:%s successfully\n", filepath, remoteUser, remoteHost, remoteDir)
+	println("file:" + filepath + " uploaded success")
 }
 
-// 主函数
-const WatchedDir = "/opt/hole"
+var (
+	watchedDir string
+	remoteHost string
+	remoteUser string
+	remoteDir  string
+)
+
+func init() {
+	flag.StringVar(&watchedDir, "watchedDir", "", "受监控目录")
+	flag.StringVar(&remoteHost, "remoteHost", "", "服务器地址")
+	flag.StringVar(&remoteUser, "remoteUser", "", "登录用户名")
+	flag.StringVar(&remoteDir, "remoteDir", "", "服务器同步目录")
+}
 
 func main() {
-	watchedDir := flag.String("watchedDir", WatchedDir, "path to watched directory")
-	// 解析命令行参数
 	flag.Parse()
+	// 检查命令行参数是否全部给出
+	if watchedDir == "" || remoteHost == "" || remoteUser == "" || remoteDir == "" {
+		log.Println("请提供所有必要的命令行参数")
+		flag.Usage()
+		os.Exit(1)
+	}
 	// 创建 Watcher，设置延迟时间为10分钟
-	w, err := NewWatcher(10 * time.Minute)
+	w, err := NewWatcher(10 * time.Second)
 	if err != nil {
 		log.Fatal("创建监视器失败:", err)
 	}
 
 	// 指定要监控的目录
-	err = w.watchDir(*watchedDir)
+	err = w.watchDir(watchedDir)
 	if err != nil {
 		log.Fatal("监控目录失败:", err)
 	}
 
-	// 阻止程序退出
 	select {}
 }
