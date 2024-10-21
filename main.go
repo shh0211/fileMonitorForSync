@@ -124,7 +124,7 @@ func (w *Watcher) triggerUpload() {
 }
 
 func uploadFileToLinux(filepath string) {
-	cmd := exec.Command("scp", filepath, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remoteDir))
+	cmd := exec.Command("scp", "-r", filepath, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remoteDir))
 	// 执行命令
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -157,7 +157,7 @@ func main() {
 		os.Exit(1)
 	}
 	// 创建 Watcher，设置延迟时间为10分钟
-	w, err := NewWatcher(10 * time.Second)
+	w, err := NewWatcher(5 * time.Minute)
 	if err != nil {
 		log.Fatal("创建监视器失败:", err)
 	}
