@@ -123,15 +123,28 @@ func (w *Watcher) triggerUpload() {
 	w.changedFiles = make(map[string]struct{})
 }
 
-func uploadFileToLinux(filepath string) {
-	cmd := exec.Command("scp", "-r", filepath, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remoteDir))
+func uploadFileToLinux(localFilePath string) {
+	// 获取相对路径
+	relativeDirPath, err := filepath.Rel(watchedDir, filepath.Dir(localFilePath))
+	if err != nil {
+		println("获取相对路径失败: %v", err)
+	}
+
+	// 目标目录路径
+	remoteDirPath := filepath.ToSlash(filepath.Join(remoteDir, relativeDirPath))
+	// 创建远程目录
+	mkdirCmd := exec.Command("ssh", fmt.Sprintf("%s@%s", remoteUser, remoteHost), "mkdir", "-p", remoteDirPath)
+	if output, err := mkdirCmd.CombinedOutput(); err != nil {
+		println("创建远程目录失败: %v, output: %s", err, string(output))
+	}
+	cmd := exec.Command("scp", "-r", localFilePath, fmt.Sprintf("%s@%s:%s", remoteUser, remoteHost, remoteDirPath))
 	// 执行命令
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		println("failed to upload file: %v, output: %s", err, string(output))
 	}
 
-	println("file:" + filepath + " uploaded success")
+	println("file:" + localFilePath + " uploaded success")
 }
 
 var (
@@ -157,7 +170,7 @@ func main() {
 		os.Exit(1)
 	}
 	// 创建 Watcher，设置延迟时间为10分钟
-	w, err := NewWatcher(5 * time.Minute)
+	w, err := NewWatcher(5 * time.Second)
 	if err != nil {
 		log.Fatal("创建监视器失败:", err)
 	}
